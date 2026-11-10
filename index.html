@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>YouTube Clock Overlay — 左上に時計</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px;
+    font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    background: #111; color: #f5f5f5;
+  }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  .bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .bar input[type="text"] {
+    flex: 1 1 260px; padding: 10px 12px; font-size: 16px;
+    border: 1px solid #444; border-radius: 8px; background: #1c1c1c; color: #fff;
+  }
+  .bar button, .bar select {
+    padding: 10px 14px; font-size: 15px;
+    border: 1px solid #444; border-radius: 8px; background: #262626; color: #fff;
+    cursor: pointer;
+  }
+  .bar button:active { background: #3a3a3a; }
+  /* 動画ラッパー：この要素をフルスクリーンにするので、時計も一緒に残る */
+  #stage {
+    position: relative; width: 100%; max-width: 960px;
+    aspect-ratio: 16 / 9; background: #000; border-radius: 10px; overflow: hidden;
+  }
+  #stage iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  #stage:fullscreen { max-width: none; border-radius: 0; }
+  /* 左上の時計オーバーレイ */
+  #clock {
+    position: absolute; top: 10px; left: 10px; z-index: 10;
+    pointer-events: none; /* クリックは動画側に通す */
+    background: rgba(0, 0, 0, 0.55);
+    border-radius: 8px; padding: 4px 12px 6px;
+    font-variant-numeric: tabular-nums; line-height: 1.15;
+    text-shadow: 0 1px 3px rgba(0,0,0,.8);
+  }
+  #clock .time { font-size: 34px; font-weight: 700; letter-spacing: 1px; }
+  #clock .date { font-size: 13px; opacity: .9; }
+  #clock.small .time { font-size: 22px; }
+  #clock.large .time { font-size: 48px; }
+  .hint { max-width: 960px; font-size: 13px; color: #bbb; line-height: 1.7; margin-top: 12px; }
+</style>
+</head>
+<body>
+  <h1>⏰ YouTube Clock Overlay（再生中、左上に時計）</h1>
+
+  <div class="bar">
+    <input id="url" type="text" inputmode="url" placeholder="YouTubeのURLを貼る（通常動画・ライブ・Shorts・youtu.be 対応）">
+    <button id="load">再生</button>
+    <select id="size" title="時計の大きさ">
+      <option value="">時計：中</option>
+      <option value="small">時計：小</option>
+      <option value="large">時計：大</option>
+    </select>
+    <button id="fs">全画面</button>
+    <button id="wake">画面を消さない: OFF</button>
+  </div>
+
+  <div id="stage">
+    <div id="clock"><div class="time">--:--:--</div><div class="date"></div></div>
+    <!-- 動画はここに読み込まれる -->
+  </div>
+
+  <p class="hint">
+    使い方：観たい動画のURLを貼って「再生」。時計は動画の左上に重なって表示されます（操作の邪魔はしません）。<br>
+    「全画面」ボタンを使うと、時計ごと全画面になります（動画側の全画面ボタンだと時計が消えるため）。<br>
+    iPhoneでは Safari でこのページを開き、共有ボタン→「ホーム画面に追加」するとアプリのように使えます。
+  </p>
+
+<script>
+(function () {
+  var stage = document.getElementById('stage');
+  var clock = document.getElementById('clock');
+  var timeEl = clock.querySelector('.time');
+  var dateEl = clock.querySelector('.date');
+  var urlInput = document.getElementById('url');
+
+  /* ---- 時計：毎秒更新 ---- */
+  var WEEK = ['日', '月', '火', '水', '木', '金', '土'];
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function tick() {
+    var d = new Date();
+    timeEl.textContent = pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+    dateEl.textContent = (d.getMonth() + 1) + '/' + d.getDate() + '（' + WEEK[d.getDay()] + '）';
+  }
+  tick();
+  setInterval(tick, 250);
+
+  /* ---- YouTube URL / ID から動画IDを取り出す ---- */
+  function extractId(s) {
+    s = (s || '').trim();
+    if (/^[A-Za-z0-9_-]{11}$/.test(s)) return s;
+    var m = s.match(/[?&]v=([A-Za-z0-9_-]{11})/)
+         || s.match(/youtu\.be\/([A-Za-z0-9_-]{11})/)
+         || s.match(/\/(?:live|shorts|embed)\/([A-Za-z0-9_-]{11})/);
+    return m ? m[1] : null;
+  }
+
+  function load() {
+    var id = extractId(urlInput.value);
+    if (!id) { alert('YouTubeのURLから動画IDが取れませんでした。URLを確認してください。'); return; }
+    var old = stage.querySelector('iframe');
+    if (old) old.remove();
+    var f = document.createElement('iframe');
+    f.src = 'https://www.youtube.com/embed/' + id + '?autoplay=1&playsinline=1&rel=0';
+    f.allow = 'accelerometer; autoplay; encrypted-media; picture-in-picture; fullscreen';
+    f.setAttribute('allowfullscreen', '');
+    stage.appendChild(f);
+    try { localStorage.setItem('yco_last_url', urlInput.value); } catch (e) {}
+  }
+  document.getElementById('load').addEventListener('click', load);
+  urlInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') load(); });
+
+  /* ---- 時計サイズ ---- */
+  document.getElementById('size').addEventListener('change', function () {
+    clock.className = this.value;
+  });
+
+  /* ---- 全画面（ラッパーごと：時計も残る） ---- */
+  document.getElementById('fs').addEventListener('click', function () {
+    if (document.fullscreenElement) { document.exitFullscreen(); }
+    else if (stage.requestFullscreen) { stage.requestFullscreen(); }
+  });
+
+  /* ---- 画面スリープ防止（Wake Lock、対応ブラウザのみ） ---- */
+  var lock = null, wakeBtn = document.getElementById('wake');
+  wakeBtn.addEventListener('click', function () {
+    if (lock) { lock.release(); lock = null; wakeBtn.textContent = '画面を消さない: OFF'; return; }
+    if ('wakeLock' in navigator) {
+      navigator.wakeLock.request('screen').then(function (l) {
+        lock = l; wakeBtn.textContent = '画面を消さない: ON';
+        l.addEventListener('release', function () { lock = null; wakeBtn.textContent = '画面を消さない: OFF'; });
+      }).catch(function () { alert('このブラウザでは画面スリープ防止が使えませんでした。'); });
+    } else { alert('このブラウザは画面スリープ防止に未対応です。'); }
+  });
+
+  /* ---- 前回の動画を復元 ---- */
+  try {
+    var last = localStorage.getItem('yco_last_url');
+    if (last) { urlInput.value = last; }
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>
